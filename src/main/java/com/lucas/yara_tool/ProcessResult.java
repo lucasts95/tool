@@ -8,7 +8,7 @@ import java.util.*;
 public class ProcessResult {
 
     private static final Map<String, Set<String>> MATCHED_RESULT = new HashMap<>();
-    private static final Map<String, Set<String>> MATCHED_RESULT_SOL = new HashMap<>();
+    private static final Map<String, ArrayList<String>> MATCHED_RESULT_SOL = new HashMap<>();
 
     private static final Set<String> MOCK = new HashSet<>();
 
@@ -17,10 +17,12 @@ public class ProcessResult {
 //            throw new RuntimeException("Missing file path to be processed.");
 //        }
         // /Users/yaowang/Documents/CS/fork/yara-runner/incidents-rules/output/opt.txt
-        String fileName = "/Users/yaowang/Documents/CS/efs 2/workspace/results/syntactic-analyzer/2023-01-24/missing_delegate_transfer/findings_aggregated.json";
+        String fileName = "/Users/yaowang/Documents/CS/efs/workspace/results/syntactic-analyzer/2023-01-24/missing_delegate_transfer/findings_aggregated.json";
         readUsingScanner(fileName);
         //System.out.println(MATCHED_RESULT_SOL);
-        MATCHED_RESULT_SOL.forEach((k, v) -> System.out.printf("%s https://accelerator.audit.certikpowered.info/project/%s  %s\n", k, k, v));
+        PrintStream out = new PrintStream("testOut.txt");
+        System.setOut(out);
+        MATCHED_RESULT_SOL.forEach((k, v) -> System.out.printf("%s %s\n", k, v.toString()));
 //        System.out.println("~~~~~~~~~~~~~~~~~~~~~~Mocked~~~~~~~~~~~~~~~~~~~~~~");
 //        System.out.printf("Mocked size = %d\n", MOCK.size());
 //        MOCK.forEach(
@@ -32,7 +34,7 @@ public class ProcessResult {
 //        Test temp = new Test();
 //        temp.setInputStr(Str);
 //        temp.Save("./test.txt");
-        saveMapToTxt(MATCHED_RESULT_SOL, "./test.txt");
+//        saveMapToTxt(MATCHED_RESULT_SOL, "./test.txt");
 
     }
 
@@ -45,38 +47,62 @@ public class ProcessResult {
             //逐行处理
             String line = scanner.nextLine();
 //            System.out.println("line:==="+line);
-            processSingleLine(line);
+            String pId = queryPidAndSC(line);
+            if (!Objects.equals(pId, "")) {
+                if (scanner.hasNextLine()) {
+                    scanner.nextLine();
+                    String line2 = scanner.nextLine();
+                    getLoc(pId, line2);
+                }
+
+            }
+
         }
         scanner.close();
     }
 
-    private static void processSingleLine(String line) {
-        if (line == null || !line.endsWith(".sol\",")) {
-            return;
-        }
-        boolean isMock = line.toLowerCase().contains("mock");
-        int index = line.indexOf(' ');
-        String rule = line.substring(0, index);
-        String[] strArr = line.substring(index + 9).split("/");
-        // sol文件
-        String solName = strArr[strArr.length - 1];
-//        System.out.println("solName= /s" + solName);
-        //System.out.println(Arrays.toString(strArr));
-        String value = strArr[5];
-        if (isMock) {
-            MOCK.add(value);
-        } else {
-            // 存在一个项目下多个sc都匹配到rule的情况
-            if (MATCHED_RESULT_SOL.containsKey(value)) {
-                MATCHED_RESULT_SOL.get(value).add(solName);
-            } else {
-                // value是commit, 第一次增加给set,并给solName
-                Set<String> set = new HashSet<>();
-                set.add(solName);
-                MATCHED_RESULT_SOL.put(value, set);
-            }
+    private static void getLoc(String Pid, String line) {
+        if (line.contains("line")) {
+            String loc = line.substring(line.indexOf(":") + 2, line.indexOf(","));
+            ArrayList<String> scAndLoc = MATCHED_RESULT_SOL.get(Pid);
+            int size = scAndLoc.size();
+            String sc = scAndLoc.get(size - 1);
+            String concat = sc + " L" + loc;
+            scAndLoc.remove(size - 1);
+            scAndLoc.add(concat);
         }
 
+    }
+
+    private static String queryPidAndSC(String line) {
+        if (line.endsWith(".sol\",")) {
+//            boolean isMock = line.toLowerCase().contains("mock");
+            int index = line.indexOf(' ');
+            String rule = line.substring(0, index);
+            String[] strArr = line.substring(index + 9).split("/");
+            // sol文件
+            String[] solNameList = strArr[strArr.length - 1].split("\"");
+            String scName = solNameList[0];
+//        System.out.println("scName= /s" + scName);
+            //System.out.println(Arrays.toString(strArr));
+            String pId = strArr[5];
+//            if (isMock) {
+//                MOCK.add(pId);
+//            } else {
+            if (MATCHED_RESULT_SOL.containsKey(pId)) {
+                // PID已存在就是项目里有多个sc,或者sc下有多个fn匹配
+                MATCHED_RESULT_SOL.get(pId).add(scName);
+            } else {
+                // 新的PID直接加入新的键值对
+                ArrayList<String> scAndLoc = new ArrayList<>();
+                scAndLoc.add(scName);
+                MATCHED_RESULT_SOL.put(pId, scAndLoc);
+            }
+
+//            }
+            return pId;
+        }
+        return "";
     }
 
     public static void saveMapToTxt(Map<String, Set<String>> map, String filePath) {
